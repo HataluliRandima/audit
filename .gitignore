@@ -1,0 +1,34 @@
+# The directory Mix will write compiled artifacts to.
+/_build/
+
+# If you run "mix test --cover", coverage assets end up here.
+/cover/
+
+# The directory Mix downloads your dependencies sources to.
+/deps/
+
+# Where third-party dependencies like ExDoc write generated docs.
+/doc/
+
+# Ignore the result of running "mix compile --native-code"
+/native/
+
+# If the crash dump project is generated, it contains details on how the
+# BEAM crashed.
+erl_crash.dump
+
+# Also ignore archive artifacts (e.g. from mix archive.build)
+*.ez
+
+# Ignore package tarball (from mix hex.build)
+*.tar
+
+# Generated temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dialyzer PLT files
+*.plt
+*.plt.hash
