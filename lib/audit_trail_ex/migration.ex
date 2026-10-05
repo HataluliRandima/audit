@@ -22,46 +22,34 @@ defmodule AuditTrailEx.Migration do
 
   ## Custom Table Name or Primary Key Type
 
-  You can customize the table name or primary key type via options:
+  The table name and primary key type come from your application config, so the table
+  always matches `AuditTrailEx.Event`:
 
   ```elixir
-  # Using bigint autoincrement primary key:
-  AuditTrailEx.Migration.up(primary_key_type: :bigserial)
-
-  # Custom table name:
-  AuditTrailEx.Migration.up(table_name: :system_audit_logs)
+  config :audit_trail_ex,
+    table_name: "system_audit_logs",
+    primary_key_type: :bigserial
   ```
+
+  The `:table_name` and `:primary_key_type` options are still accepted, but raise if they
+  differ from the configured values.
   """
 
   use Ecto.Migration
+
+  alias AuditTrailEx.Event
 
   @doc """
   Runs the migration to create the audit events table and indexes.
   """
   @spec up(keyword()) :: :ok
   def up(opts \\ []) do
-    table_name = Keyword.get(opts, :table_name, :audit_events)
-    primary_key_type = Keyword.get(opts, :primary_key_type, :binary_id)
+    table_name = table_name(opts)
+    primary_key_type = primary_key_type(opts)
     with_gin_index = Keyword.get(opts, :gin_index, true)
 
-    table_opts =
-      case primary_key_type do
-        :binary_id -> [primary_key: false]
-        :bigserial -> [primary_key: false]
-        _ -> [primary_key: false]
-      end
-
-    create_if_not_exists table(table_name, table_opts) do
-      case primary_key_type do
-        :binary_id ->
-          add :id, :binary_id, primary_key: true
-
-        :bigserial ->
-          add :id, :bigserial, primary_key: true
-
-        custom_type ->
-          add :id, custom_type, primary_key: true
-      end
+    create_if_not_exists table(table_name, primary_key: false) do
+      add :id, primary_key_type, primary_key: true
 
       add :action, :string, null: false
       add :schema, :string, null: false
@@ -104,8 +92,40 @@ defmodule AuditTrailEx.Migration do
   """
   @spec down(keyword()) :: :ok
   def down(opts \\ []) do
-    table_name = Keyword.get(opts, :table_name, :audit_events)
-    drop_if_exists table(table_name)
+    drop_if_exists table(table_name(opts))
     :ok
+  end
+
+  defp table_name(opts) do
+    configured = Event.__schema__(:source)
+    check_option!(opts, :table_name, configured, &to_string/1)
+    String.to_atom(configured)
+  end
+
+  defp primary_key_type(opts) do
+    configured =
+      case Event.__schema__(:type, :id) do
+        :binary_id -> :binary_id
+        :id -> :bigserial
+      end
+
+    check_option!(opts, :primary_key_type, configured, & &1)
+    configured
+  end
+
+  defp check_option!(opts, key, configured, normalize) do
+    case Keyword.fetch(opts, key) do
+      {:ok, value} when value != nil ->
+        if normalize.(value) != configured do
+          raise ArgumentError,
+                "AuditTrailEx.Migration option #{key}: #{inspect(value)} does not match " <>
+                  "AuditTrailEx.Event (#{inspect(configured)}). Set `config :audit_trail_ex, " <>
+                  "#{key}: #{inspect(value)}` and recompile with " <>
+                  "`mix deps.compile audit_trail_ex --force` instead."
+        end
+
+      _ ->
+        :ok
+    end
   end
 end

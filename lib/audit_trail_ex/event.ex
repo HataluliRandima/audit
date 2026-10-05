@@ -14,19 +14,40 @@ defmodule AuditTrailEx.Event do
     * `metadata` - arbitrary contextual metadata (e.g. request ID, IP address, reason)
     * `inserted_at` - UTC timestamp with microsecond precision
 
-  ## Primary Keys
-  The default schema uses a binary UUID primary key (`:binary_id`). The table can also be
-  configured for integer or bigint primary keys if specified in custom migrations.
+  ## Table Name and Primary Key Type
+
+  By default events are stored in `audit_events` with a UUID (`:binary_id`) primary key.
+  Both can be changed in your application config:
+
+      config :audit_trail_ex,
+        table_name: "system_audit_logs",
+        primary_key_type: :bigserial
+
+  These are read at compile time, so recompile the dependency after changing them
+  (`mix deps.compile audit_trail_ex --force`). `AuditTrailEx.Migration` reads the same
+  settings, so the table it creates always matches this schema.
   """
 
   use Ecto.Schema
   import Ecto.Changeset
 
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
+  @table_name Application.compile_env(:audit_trail_ex, :table_name, "audit_events")
+
+  @primary_key (case Application.compile_env(:audit_trail_ex, :primary_key_type, :binary_id) do
+                  :binary_id ->
+                    {:id, :binary_id, autogenerate: true}
+
+                  :bigserial ->
+                    {:id, :id, autogenerate: true}
+
+                  other ->
+                    raise ArgumentError,
+                          "invalid :primary_key_type for :audit_trail_ex: #{inspect(other)}, " <>
+                            "expected :binary_id or :bigserial"
+                end)
 
   @type t :: %__MODULE__{
-          id: Ecto.UUID.t() | nil,
+          id: Ecto.UUID.t() | integer() | nil,
           action: String.t(),
           schema: String.t(),
           table: String.t(),
@@ -40,7 +61,7 @@ defmodule AuditTrailEx.Event do
 
   @valid_actions ~w(insert update delete)
 
-  schema "audit_events" do
+  schema @table_name do
     field :action, :string
     field :schema, :string
     field :table, :string

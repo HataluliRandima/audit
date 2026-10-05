@@ -11,7 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Virtual fields (e.g. `:password`) are no longer recorded in audit diffs or serialized Ecto schemas.
 - Association changes (`has_many`, `belongs_to`, etc.) are no longer recorded; previously nested changesets, including their raw params, were stored in `changes`.
 
+### Changed
+- The audit table name and primary key type are now configured with `config :audit_trail_ex, table_name: ..., primary_key_type: ...`. `AuditTrailEx.Migration.up/1` reads the same config and raises if its `:table_name` / `:primary_key_type` options disagree with it.
+
 ### Fixed
+- `AuditTrailEx.Migration.up(primary_key_type: :bigserial)` or a custom `:table_name` produced a table that `AuditTrailEx.Event` could not write to.
 - Embedded schema changes are recorded as their applied values instead of raw `Ecto.Changeset` structs.
 - Insert/delete of structs no longer record `Ecto.Association.NotLoaded` placeholders.
 

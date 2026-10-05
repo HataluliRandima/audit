@@ -76,14 +76,20 @@ mix ecto.migrate
 
 ### Custom Primary Key or Table Name
 
-If your application prefers integer autoincrement primary keys or a different table name:
+The table name and primary key type are set in config, and both `AuditTrailEx.Event` and
+`AuditTrailEx.Migration` read them, so the schema and table always match:
 
 ```elixir
-# Using bigserial primary keys:
-AuditTrailEx.Migration.up(primary_key_type: :bigserial)
+# config/config.exs
+config :audit_trail_ex,
+  table_name: "system_audit_logs",   # default: "audit_events"
+  primary_key_type: :bigserial       # default: :binary_id (UUID)
+```
 
-# Custom table name:
-AuditTrailEx.Migration.up(table_name: :system_audit_logs)
+These settings are read at compile time. After changing them, recompile the dependency:
+
+```bash
+mix deps.compile audit_trail_ex --force
 ```
 
 ---
