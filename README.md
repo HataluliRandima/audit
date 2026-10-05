@@ -378,3 +378,4 @@ Pull requests are welcome! Please check out [CONTRIBUTING.md](CONTRIBUTING.md) f
 ## License
 
 AuditTrailEx is open-source software licensed under the [MIT License](LICENSE).
+

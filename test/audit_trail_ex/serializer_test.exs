@@ -2,6 +2,7 @@ defmodule AuditTrailEx.SerializerTest do
   use ExUnit.Case, async: true
 
   alias AuditTrailEx.Serializer
+  alias AuditTrailEx.TestSchemas.Account
   alias AuditTrailEx.TestSchemas.User
 
   describe "serialize/1" do
@@ -46,6 +47,13 @@ defmodule AuditTrailEx.SerializerTest do
       assert serialized["name"] == "Alice"
       assert serialized["email"] == "alice@example.com"
       assert serialized["id"] == 1
+    end
+
+    test "serializes Ecto schemas without virtual fields or associations" do
+      account = %Account{id: 1, name: "Acme", new_password: "hunter2"}
+      serialized = Serializer.serialize(account)
+
+      assert serialized == %{"id" => 1, "name" => "Acme", "address" => nil}
     end
 
     test "recursively serializes maps, lists, and tuples" do

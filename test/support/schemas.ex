@@ -86,3 +86,50 @@ defimpl AuditTrailEx.Actor, for: AuditTrailEx.TestSchemas.ActorAdmin do
     {to_string(id), "admin:#{dept}"}
   end
 end
+
+defmodule AuditTrailEx.TestSchemas.Address do
+  @moduledoc false
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  embedded_schema do
+    field :city, :string
+    field :access_code, :string, virtual: true
+  end
+
+  def changeset(address, attrs), do: cast(address, attrs, [:city, :access_code])
+end
+
+defmodule AuditTrailEx.TestSchemas.Comment do
+  @moduledoc false
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  schema "comments" do
+    field :body, :string
+    field :private_note, :string
+    belongs_to :account, AuditTrailEx.TestSchemas.Account
+  end
+
+  def changeset(comment, attrs), do: cast(comment, attrs, [:body, :private_note])
+end
+
+defmodule AuditTrailEx.TestSchemas.Account do
+  @moduledoc false
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  schema "accounts" do
+    field :name, :string
+    field :new_password, :string, virtual: true
+    embeds_one :address, AuditTrailEx.TestSchemas.Address
+    has_many :comments, AuditTrailEx.TestSchemas.Comment
+  end
+
+  def changeset(account, attrs) do
+    account
+    |> cast(attrs, [:name, :new_password])
+    |> cast_embed(:address)
+    |> cast_assoc(:comments)
+  end
+end

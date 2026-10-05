@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- Virtual fields (e.g. `:password`) are no longer recorded in audit diffs or serialized Ecto schemas.
+- Association changes (`has_many`, `belongs_to`, etc.) are no longer recorded; previously nested changesets, including their raw params, were stored in `changes`.
+
+### Fixed
+- Embedded schema changes are recorded as their applied values instead of raw `Ecto.Changeset` structs.
+- Insert/delete of structs no longer record `Ecto.Association.NotLoaded` placeholders.
+
 ## [0.1.0] - 2026-09-19
 
 ### Added
@@ -21,3 +31,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reusable Ecto migration helper (`AuditTrailEx.Migration`) with recommended PostgreSQL composite and GIN indexes.
 - Decoupled web request metadata extraction helper (`AuditTrailEx.Web`).
 - Comprehensive ExUnit test suite, documentation, and demo script.
+

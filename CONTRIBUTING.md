@@ -72,3 +72,4 @@ mix docs
 3. Keep commit messages clear and concise.
 4. Ensure CI tests and quality checks pass.
 5. Open a Pull Request on GitHub with a description of the changes.
+

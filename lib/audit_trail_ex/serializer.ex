@@ -5,7 +5,8 @@ defmodule AuditTrailEx.Serializer do
   Handles:
     * `Decimal` -> ISO string representation via `Decimal.to_string/1`
     * `Date`, `Time`, `DateTime`, `NaiveDateTime` -> ISO 8601 strings
-    * Structs -> maps without `:__meta__` and internal keys
+    * Ecto schemas -> maps of persisted fields only (no virtual fields or associations)
+    * Other structs -> maps without `:__meta__`
     * Maps -> maps with string keys and serialized values
     * Lists & Tuples -> lists with serialized elements
     * Atoms -> strings (except `nil`, `true`, `false`)
@@ -37,11 +38,13 @@ defmodule AuditTrailEx.Serializer do
   def serialize(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
   def serialize(%NaiveDateTime{} = ndt), do: NaiveDateTime.to_iso8601(ndt)
 
-  def serialize(%{__struct__: _} = struct) do
-    struct
-    |> Map.from_struct()
-    |> Map.drop([:__meta__])
-    |> serialize()
+  def serialize(%{__struct__: module} = struct) do
+    map = Map.from_struct(struct)
+
+    case schema_fields(module) do
+      nil -> map |> Map.drop([:__meta__]) |> serialize()
+      fields -> map |> Map.take(fields) |> serialize()
+    end
   end
 
   def serialize(map) when is_map(map) do
@@ -68,4 +71,14 @@ defmodule AuditTrailEx.Serializer do
   end
 
   def serialize(other), do: inspect(other)
+
+  @doc false
+  # Persisted fields of an Ecto schema (excludes virtual fields and associations),
+  # or `nil` if `module` is not an Ecto schema.
+  @spec schema_fields(module()) :: [atom()] | nil
+  def schema_fields(module) when is_atom(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :__schema__, 1) do
+      module.__schema__(:fields)
+    end
+  end
 end

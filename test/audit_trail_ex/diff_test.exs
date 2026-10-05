@@ -2,7 +2,9 @@ defmodule AuditTrailEx.DiffTest do
   use ExUnit.Case, async: true
 
   alias AuditTrailEx.Diff
+  alias AuditTrailEx.TestSchemas.Account
   alias AuditTrailEx.TestSchemas.Article
+  alias AuditTrailEx.TestSchemas.Comment
   alias AuditTrailEx.TestSchemas.User
 
   describe "calculate(:insert, ...)" do
@@ -114,6 +116,57 @@ defmodule AuditTrailEx.DiffTest do
       assert diff["role"] == %{"from" => "member", "to" => nil}
       assert diff["email"] == %{"from" => "[REDACTED]", "to" => nil}
       refute Map.has_key?(diff, "__meta__")
+    end
+  end
+
+  describe "virtual fields and associations" do
+    @attrs %{
+      "name" => "Acme",
+      "new_password" => "hunter2",
+      "address" => %{"city" => "Lisbon", "access_code" => "1234"},
+      "comments" => [%{"body" => "hi", "private_note" => "s3cr3t"}]
+    }
+
+    test "insert never records virtual fields or associations" do
+      diff = Diff.calculate(:insert, Account.changeset(%Account{}, @attrs))
+
+      assert Map.keys(diff) |> Enum.sort() == ["address", "name"]
+      refute inspect(diff) =~ "hunter2"
+      refute inspect(diff) =~ "s3cr3t"
+    end
+
+    test "update never records virtual fields or associations" do
+      account = %Account{id: 1, name: "Old", address: nil, comments: []}
+      diff = Diff.calculate(:update, Account.changeset(account, @attrs))
+
+      assert Map.keys(diff) |> Enum.sort() == ["address", "name"]
+      refute inspect(diff) =~ "hunter2"
+      refute inspect(diff) =~ "s3cr3t"
+    end
+
+    test "embeds are recorded as applied values, not changesets" do
+      account = %Account{id: 1, name: "Acme", address: nil, comments: []}
+      diff = Diff.calculate(:update, Account.changeset(account, @attrs))
+
+      assert %{"from" => nil, "to" => %{"city" => "Lisbon", "id" => _}} = diff["address"]
+      refute Map.has_key?(diff["address"]["to"], "access_code")
+    end
+
+    test "insert and delete of structs skip unloaded associations" do
+      comment = %Comment{id: 1, body: "hi", account_id: 7}
+
+      for action <- [:insert, :delete] do
+        diff = Diff.calculate(action, comment)
+        assert Map.keys(diff) |> Enum.sort() == ["account_id", "body", "id"]
+      end
+    end
+
+    test "delete of a struct with virtual fields set does not record them" do
+      account = %Account{id: 1, name: "Acme", new_password: "hunter2"}
+      diff = Diff.calculate(:delete, account)
+
+      refute Map.has_key?(diff, "new_password")
+      refute Map.has_key?(diff, "comments")
     end
   end
 end

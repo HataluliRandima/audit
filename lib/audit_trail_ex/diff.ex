@@ -4,6 +4,11 @@ defmodule AuditTrailEx.Diff do
 
   Only modified fields are recorded for updates. Sensitive fields are filtered or
   redacted according to global, schema, or per-operation rules.
+
+  Only persisted schema fields are audited. Virtual fields (which often carry plaintext
+  secrets such as `:password`) and associations (`has_many`, `belongs_to`, etc.) are never
+  recorded; audit associated records with their own operations. Embedded schemas are
+  recorded as their applied values.
   """
 
   alias AuditTrailEx.Filter
@@ -29,13 +34,16 @@ defmodule AuditTrailEx.Diff do
 
   def calculate(:insert, %Ecto.Changeset{} = changeset, opts) do
     schema = changeset.data.__struct__
+    applied = Ecto.Changeset.apply_changes(changeset)
 
     raw_diff =
       changeset.changes
-      |> Enum.map(fn {field, value} ->
-        {to_string(field), %{"from" => nil, "to" => Serializer.serialize(value)}}
+      |> Map.keys()
+      |> auditable(schema)
+      |> Map.new(fn field ->
+        {to_string(field),
+         %{"from" => nil, "to" => Serializer.serialize(Map.get(applied, field))}}
       end)
-      |> Map.new()
 
     Filter.filter_changes(raw_diff, schema, opts)
   end
@@ -43,13 +51,10 @@ defmodule AuditTrailEx.Diff do
   def calculate(:insert, %{__struct__: schema} = struct, opts) do
     raw_diff =
       struct
-      |> Map.from_struct()
-      |> Map.drop([:__meta__])
-      |> Enum.reject(fn {_field, value} -> is_nil(value) end)
-      |> Enum.map(fn {field, value} ->
+      |> persisted_values()
+      |> Map.new(fn {field, value} ->
         {to_string(field), %{"from" => nil, "to" => Serializer.serialize(value)}}
       end)
-      |> Map.new()
 
     Filter.filter_changes(raw_diff, schema, opts)
   end
@@ -57,19 +62,18 @@ defmodule AuditTrailEx.Diff do
   def calculate(:update, %Ecto.Changeset{} = changeset, opts) do
     schema = changeset.data.__struct__
     data = changeset.data
+    applied = Ecto.Changeset.apply_changes(changeset)
 
     raw_diff =
       changeset.changes
-      |> Enum.reduce(%{}, fn {field, new_value}, acc ->
-        old_value = Map.get(data, field)
+      |> Map.keys()
+      |> auditable(schema)
+      |> Enum.reduce(%{}, fn field, acc ->
+        old_value = Serializer.serialize(Map.get(data, field))
+        new_value = Serializer.serialize(Map.get(applied, field))
 
-        if values_differ?(old_value, new_value) do
-          diff = %{
-            "from" => Serializer.serialize(old_value),
-            "to" => Serializer.serialize(new_val_or_changeset(new_value))
-          }
-
-          Map.put(acc, to_string(field), diff)
+        if old_value != new_value do
+          Map.put(acc, to_string(field), %{"from" => old_value, "to" => new_value})
         else
           acc
         end
@@ -85,13 +89,10 @@ defmodule AuditTrailEx.Diff do
   def calculate(:delete, %{__struct__: schema} = struct, opts) do
     raw_diff =
       struct
-      |> Map.from_struct()
-      |> Map.drop([:__meta__])
-      |> Enum.reject(fn {_field, value} -> is_nil(value) end)
-      |> Enum.map(fn {field, value} ->
+      |> persisted_values()
+      |> Map.new(fn {field, value} ->
         {to_string(field), %{"from" => Serializer.serialize(value), "to" => nil}}
       end)
-      |> Map.new()
 
     Filter.filter_changes(raw_diff, schema, opts)
   end
@@ -100,10 +101,21 @@ defmodule AuditTrailEx.Diff do
     calculate(String.to_existing_atom(action), data, opts)
   end
 
-  defp values_differ?(old_val, new_val) do
-    Serializer.serialize(old_val) != Serializer.serialize(new_val)
+  # Virtual fields and associations are never audited: virtual fields commonly hold
+  # plaintext secrets (e.g. `:password`), and associations are separate records.
+  defp auditable(fields, schema) do
+    case Serializer.schema_fields(schema) do
+      nil -> fields
+      persisted -> Enum.filter(fields, &(&1 in persisted))
+    end
   end
 
-  defp new_val_or_changeset(%Ecto.Changeset{} = cs), do: Ecto.Changeset.apply_changes(cs)
-  defp new_val_or_changeset(val), do: val
+  defp persisted_values(%{__struct__: schema} = struct) do
+    map = Map.from_struct(struct)
+    fields = Serializer.schema_fields(schema) || Map.keys(map) -- [:__meta__]
+
+    map
+    |> Map.take(fields)
+    |> Enum.reject(fn {_field, value} -> is_nil(value) end)
+  end
 end
