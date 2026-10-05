@@ -133,3 +133,20 @@ defmodule AuditTrailEx.TestSchemas.Account do
     |> cast_assoc(:comments)
   end
 end
+
+defmodule AuditTrailEx.TestSchemas.Note do
+  @moduledoc false
+  use Ecto.Schema
+
+  schema "notes" do
+    field :title, :string
+    field :body, :string
+    field :access_token, :string
+    field :pin, :string
+    field :rating, :integer, source: :score
+  end
+
+  def __audit_trail_options__ do
+    [excluded_fields: [:access_token], redacted_fields: [:pin]]
+  end
+end

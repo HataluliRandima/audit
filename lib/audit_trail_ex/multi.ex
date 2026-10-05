@@ -10,6 +10,7 @@ defmodule AuditTrailEx.Multi do
   alias AuditTrailEx.Diff
   alias AuditTrailEx.Event
   alias AuditTrailEx.Telemetry
+  alias AuditTrailEx.Trigger
 
   @doc """
   Adds an insert operation and its corresponding audit event to the `Ecto.Multi`.
@@ -36,7 +37,7 @@ defmodule AuditTrailEx.Multi do
     audit_name = Keyword.get(opts, :audit_name, :"#{name}_audit")
 
     multi
-    |> Ecto.Multi.insert(name, changeset_or_struct)
+    |> Trigger.skip_steps(name, &Ecto.Multi.insert(&1, name, changeset_or_struct))
     |> Ecto.Multi.run(audit_name, fn repo, results ->
       record = Map.fetch!(results, name)
       create_audit_event(repo, :insert, record, changeset_or_struct, opts)
@@ -69,7 +70,7 @@ defmodule AuditTrailEx.Multi do
     audit_name = Keyword.get(opts, :audit_name, :"#{name}_audit")
 
     multi
-    |> Ecto.Multi.update(name, changeset)
+    |> Trigger.skip_steps(name, &Ecto.Multi.update(&1, name, changeset))
     |> Ecto.Multi.run(audit_name, fn repo, results ->
       record = Map.fetch!(results, name)
       create_audit_event(repo, :update, record, changeset, opts)
@@ -101,7 +102,7 @@ defmodule AuditTrailEx.Multi do
     audit_name = Keyword.get(opts, :audit_name, :"#{name}_audit")
 
     multi
-    |> Ecto.Multi.delete(name, struct_or_changeset)
+    |> Trigger.skip_steps(name, &Ecto.Multi.delete(&1, name, struct_or_changeset))
     |> Ecto.Multi.run(audit_name, fn repo, results ->
       record = Map.fetch!(results, name)
       create_audit_event(repo, :delete, record, struct_or_changeset, opts)
@@ -111,7 +112,8 @@ defmodule AuditTrailEx.Multi do
   @doc """
   Appends an audit step to an existing operation in an `Ecto.Multi`.
 
-  Useful when an operation was already registered in the multi.
+  Useful when an operation was already registered in the multi. If the target table has an
+  audit trigger (see `AuditTrailEx.Trigger`), the trigger records the operation too.
   """
   @spec audit(Ecto.Multi.t(), Ecto.Multi.name(), Ecto.Multi.name(), keyword()) ::
           Ecto.Multi.t()

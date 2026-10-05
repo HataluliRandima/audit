@@ -1,6 +1,6 @@
 defmodule AuditTrailEx do
   @moduledoc """
-  A production-quality audit logging and change-history library for Elixir and Ecto.
+  A transaction-safe audit logging and change-history library for Elixir and Ecto.
 
   AuditTrailEx provides:
     * **Atomic Transaction Safety**: Mutations and audit events are executed in the same database transaction.
@@ -44,6 +44,7 @@ defmodule AuditTrailEx do
   alias AuditTrailEx.Formatter
   alias AuditTrailEx.Multi, as: AuditMulti
   alias AuditTrailEx.Query, as: AuditQuery
+  alias AuditTrailEx.Trigger
 
   @doc """
   Inserts a struct or changeset and logs an audit event within a transaction.
@@ -91,10 +92,7 @@ defmodule AuditTrailEx do
           {:ok, record}
         end
 
-      {:error, :record, error_val, _} ->
-        {:error, error_val}
-
-      {:error, :record_audit, error_val, _} ->
+      {:error, _step, error_val, _} ->
         {:error, error_val}
 
       {:error, other} ->
@@ -158,10 +156,7 @@ defmodule AuditTrailEx do
           {:ok, record}
         end
 
-      {:error, :record, error_val, _} ->
-        {:error, error_val}
-
-      {:error, :record_audit, error_val, _} ->
+      {:error, _step, error_val, _} ->
         {:error, error_val}
 
       {:error, other} ->
@@ -224,10 +219,7 @@ defmodule AuditTrailEx do
           {:ok, record}
         end
 
-      {:error, :record, error_val, _} ->
-        {:error, error_val}
-
-      {:error, :record_audit, error_val, _} ->
+      {:error, _step, error_val, _} ->
         {:error, error_val}
 
       {:error, other} ->
@@ -289,6 +281,36 @@ defmodule AuditTrailEx do
         raise ArgumentError, "AuditTrailEx.audit/3 requires an Ecto.Changeset for updates"
     end
   end
+
+  @doc """
+  Runs `fun` in a transaction with the actor and metadata recorded by audit triggers.
+
+  Only affects events recorded by `AuditTrailEx.Trigger`. Returns the result of
+  `repo.transaction/1`. Accepts the same `:actor`, `:actor_id`, `:actor_type` and
+  `:metadata` options as `update/3`.
+
+  ## Examples
+
+      {:ok, {count, nil}} =
+        AuditTrailEx.with_context(Repo, [actor: current_user], fn ->
+          Repo.update_all(User, set: [role: "member"])
+        end)
+  """
+  @spec with_context(module(), keyword(), (-> result)) :: {:ok, result} | {:error, term()}
+        when result: term()
+  def with_context(repo, opts, fun) do
+    repo.transaction(fn ->
+      Trigger.put_context(repo, opts)
+      fun.()
+    end)
+  end
+
+  @doc """
+  Sets the actor and metadata recorded by audit triggers for the rest of the current
+  transaction. See `AuditTrailEx.Trigger.put_context/2`.
+  """
+  @spec put_context(module(), keyword()) :: :ok
+  defdelegate put_context(repo, opts), to: Trigger
 
   @doc """
   Retrieves audit history for a given schema and record ID.

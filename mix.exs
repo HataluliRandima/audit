@@ -2,7 +2,7 @@ defmodule AuditTrailEx.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/hata/audit_trail_ex"
+  @source_url "https://github.com/HataluliRandima/audit"
 
   def project do
     [
@@ -80,6 +80,7 @@ defmodule AuditTrailEx.MixProject do
           AuditTrailEx.Actor,
           AuditTrailEx.Query,
           AuditTrailEx.Migration,
+          AuditTrailEx.Trigger,
           AuditTrailEx.Telemetry,
           AuditTrailEx.Web
         ]

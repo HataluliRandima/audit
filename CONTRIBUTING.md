@@ -17,7 +17,7 @@ Please be respectful and constructive in all discussions, issues, and pull reque
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/hata/audit_trail_ex.git
+git clone https://github.com/HataluliRandima/audit.git
 cd audit_trail_ex
 mix deps.get
 ```

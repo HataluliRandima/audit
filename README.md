@@ -1,11 +1,13 @@
 # AuditTrailEx
 
-[![CI](https://github.com/hata/audit_trail_ex/actions/workflows/ci.yml/badge.svg)](https://github.com/hata/audit_trail_ex/actions/workflows/ci.yml)
+[![CI](https://github.com/HataluliRandima/audit/actions/workflows/ci.yml/badge.svg)](https://github.com/HataluliRandima/audit/actions/workflows/ci.yml)
 [![Hex.pm](https://img.shields.io/hexpm/v/audit_trail_ex.svg)](https://hex.pm/packages/audit_trail_ex)
 [![Hexdocs.pm](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/audit_trail_ex)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**AuditTrailEx** is a production-ready, transaction-safe audit logging and change-history library for Elixir applications using Ecto.
+**AuditTrailEx** is a transaction-safe audit logging and change-history library for Elixir applications using Ecto.
+
+> **Status:** early release (0.x). The API may change before 1.0. Please read [Limitations](#limitations) before relying on it for compliance.
 
 It provides automated field-level diff calculation, granular sensitive-field exclusion and redaction, flexible actor identification, structured change formatting, and seamless `Ecto.Multi` pipeline integration.
 
@@ -13,20 +15,13 @@ It provides automated field-level diff calculation, granular sensitive-field exc
 
 ## Why AuditTrailEx?
 
-Many existing audit solutions in the Elixir ecosystem either:
-1. Force heavy framework dependencies like Phoenix or specific session plugs.
-2. Store entire snapshot duplicates of rows on every update rather than granular field diffs.
-3. Lack built-in protection against leaking sensitive credentials or passwords into audit tables.
-4. Execute audit writes outside or after database transactions, risking inconsistency if operations fail.
-
-**AuditTrailEx** was engineered from the ground up to solve these challenges:
-* **Zero Cruft & Framework Agnostic**: Depends solely on `Ecto` and `Jason`. Phoenix and Plug remain 100% optional.
-* **Strict Transaction Safety**: Database mutations and audit events commit atomically in the same database transaction.
-* **Field-Level Diffing**: Only changed fields are stored for updates (`from` and `to`), drastically saving storage.
-* **Proactive Sensitive Data Protection**: Hierarchical exclusion and redaction guarantees secrets never touch logs.
+* **Transaction Safety**: Database mutations and audit events commit atomically in the same database transaction.
+* **Field-Level Diffing**: Only changed fields are stored for updates (`from` and `to`), not full row snapshots.
+* **Sensitive Data Protection**: Virtual fields and associations are never recorded, and configurable exclusion/redaction keeps listed fields out of the log.
+* **Framework Agnostic**: Depends on `ecto_sql`, `jason` and `telemetry`. Phoenix and Plug are optional.
 * **Flexible Actor Architecture**: Track authenticated users, admins, API keys, workers, or automated system tasks.
-* **Human-Readable Presentation**: Out-of-the-box structured change descriptions and plain-text summaries.
-* **Telemetry Built-in**: Safe metric emission with zero data-leak risk.
+* **Human-Readable Presentation**: Structured change descriptions and plain-text summaries.
+* **Telemetry Built-in**: Metrics that include field names but never field values.
 
 ---
 
@@ -322,12 +317,66 @@ AuditTrailEx dispatches standard `:telemetry` events:
 
 > **Security Note**: Telemetry metadata **never** includes raw field values, previous values, or new values. Only field names and structural metadata are emitted.
 
+### 9. Capturing Changes Made Outside AuditTrailEx (PostgreSQL)
+
+By default only writes made through AuditTrailEx are audited. To also capture plain `Repo`
+calls, `update_all`/`insert_all`/`delete_all`, raw SQL and manual database changes, add
+audit triggers (PostgreSQL 13+):
+
+```elixir
+defmodule MyApp.Repo.Migrations.AddAuditTriggers do
+  use Ecto.Migration
+
+  def up do
+    AuditTrailEx.Trigger.install()
+    AuditTrailEx.Trigger.create(MyApp.Accounts.User)
+  end
+
+  def down do
+    AuditTrailEx.Trigger.drop(MyApp.Accounts.User)
+    AuditTrailEx.Trigger.uninstall()
+  end
+end
+```
+
+The trigger uses the schema's primary key and the same excluded and redacted fields as
+AuditTrailEx. These are fixed when the migration runs, so after changing them, drop and
+re-create the trigger in a new migration.
+
+Turn on `trigger_capture` so writes made through AuditTrailEx are not recorded twice:
+
+```elixir
+config :audit_trail_ex, trigger_capture: true
+```
+
+Set the actor and metadata for triggered events with `with_context/3` (or `put_context/2`
+inside an existing transaction):
+
+```elixir
+AuditTrailEx.with_context(Repo, [actor: current_user, metadata: %{reason: "cleanup"}], fn ->
+  Repo.update_all(User, set: [role: "member"])
+end)
+```
+
+Without a context, triggered events have `actor_type: "system"`. See `AuditTrailEx.Trigger`
+for how triggered events differ (e.g. decimals are stored as JSON numbers).
+
+---
+
+## Limitations
+
+* **Without triggers, only changes made through AuditTrailEx are audited.** `AuditTrailEx.insert/update/delete` and `AuditTrailEx.Multi` record events; plain `Repo` calls, `insert_all`/`update_all`/`delete_all`, raw SQL, and manual database changes are only recorded on tables with [audit triggers](#9-capturing-changes-made-outside-audittrailex-postgresql). `TRUNCATE` is never recorded.
+* **Associations are not audited through their parent.** Changes made with `cast_assoc` are not recorded in the parent's event; audit associated records with their own operations. Embedded schemas are recorded.
+* **Exclusion and redaction are name-based.** Persisted columns holding secrets (e.g. `hashed_password`, API tokens) must be listed in `excluded_fields` or `redacted_fields`.
+* **Primarily tested on PostgreSQL.** GIN indexes are only created on PostgreSQL; other Ecto SQL adapters are untested.
+* **One audit table per application.** The table name and primary key type are global, compile-time settings.
+
 ---
 
 ## Performance & Maintenance
 
 * **Composite Indexes**: The default migration adds optimized composite indexes for `[:schema, :record_id]` and `[:actor_type, :actor_id]`, as well as `[:action]` and `[:inserted_at]`.
-* **GIN Indexes on JSONB**: For PostgreSQL installations, GIN indexes are automatically created on `changes` and `metadata` to support fast JSON path queries.
+* **GIN Indexes on JSONB**: On PostgreSQL, GIN indexes are created on `changes` and `metadata` to support fast JSON queries. Skip them with `AuditTrailEx.Migration.up(gin_index: false)`.
 * **Partitioning Strategy**: For high-volume production systems generating millions of audit records per month, consider partitioning the `audit_events` table by range on `inserted_at` (e.g. monthly PostgreSQL table partitions).
 
 ---
@@ -368,6 +417,7 @@ mix docs
 
 ## Roadmap
 
+- [x] Optional PostgreSQL trigger-based capture, so changes made outside AuditTrailEx (`update_all`, raw SQL) are also recorded
 - [ ] PostgreSQL table partitioning migration recipe
 - [ ] Configurable async audit writer adapter (Oban / GenStage) for high-throughput write decoupling
 - [ ] Rollback replay helper: `AuditTrailEx.revert(record, audit_event)`

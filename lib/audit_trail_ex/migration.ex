@@ -33,6 +33,11 @@ defmodule AuditTrailEx.Migration do
 
   The `:table_name` and `:primary_key_type` options are still accepted, but raise if they
   differ from the configured values.
+
+  ## Options
+
+    * `:gin_index` - create GIN indexes on `changes` and `metadata` (default: `true`).
+      Only applies to PostgreSQL; ignored on other adapters.
   """
 
   use Ecto.Migration
@@ -67,21 +72,17 @@ defmodule AuditTrailEx.Migration do
     create_if_not_exists index(table_name, [:action])
     create_if_not_exists index(table_name, [:inserted_at])
 
-    if with_gin_index do
-      # GIN indexes for PostgreSQL JSONB
-      execute """
-      DO $$
-      BEGIN
-        IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'btree_gin' OR true) THEN
-          BEGIN
-            CREATE INDEX IF NOT EXISTS #{table_name}_changes_gin_idx ON #{table_name} USING gin (changes);
-            CREATE INDEX IF NOT EXISTS #{table_name}_metadata_gin_idx ON #{table_name} USING gin (metadata);
-          EXCEPTION WHEN OTHERS THEN
-            NULL;
-          END;
-        END IF;
-      END $$;
-      """
+    # GIN indexes speed up JSONB queries on `changes` and `metadata` (PostgreSQL only).
+    if with_gin_index and postgres?() do
+      create_if_not_exists index(table_name, [:changes],
+                             using: "GIN",
+                             name: :"#{table_name}_changes_gin_idx"
+                           )
+
+      create_if_not_exists index(table_name, [:metadata],
+                             using: "GIN",
+                             name: :"#{table_name}_metadata_gin_idx"
+                           )
     end
 
     :ok
@@ -95,6 +96,8 @@ defmodule AuditTrailEx.Migration do
     drop_if_exists table(table_name(opts))
     :ok
   end
+
+  defp postgres?, do: repo().__adapter__() == Ecto.Adapters.Postgres
 
   defp table_name(opts) do
     configured = Event.__schema__(:source)

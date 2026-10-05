@@ -45,3 +45,30 @@ defmodule AuditTrailEx.TestMigrations do
     AuditTrailEx.Migration.down()
   end
 end
+
+defmodule AuditTrailEx.TestTriggerMigrations do
+  @moduledoc false
+  use Ecto.Migration
+
+  alias AuditTrailEx.TestSchemas.Note
+  alias AuditTrailEx.Trigger
+
+  def up do
+    create_if_not_exists table(:notes) do
+      add :title, :string
+      add :body, :text
+      add :access_token, :string
+      add :pin, :string
+      add :score, :integer
+    end
+
+    Trigger.install()
+    Trigger.create(Note)
+  end
+
+  def down do
+    Trigger.drop(Note)
+    Trigger.uninstall()
+    drop_if_exists table(:notes)
+  end
+end
